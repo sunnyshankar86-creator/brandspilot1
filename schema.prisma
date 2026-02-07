@@ -1,0 +1,380 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  MANAGER
+  OWNER
+}
+
+enum AdminRole {
+  ADMIN
+  SUPERADMIN
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum PlanInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum ContentType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+}
+
+enum ContentStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  ARCHIVED
+}
+
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  X
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+  PINTEREST
+  THREADS
+  OTHER
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum UsageMetricType {
+  TOKENS
+  REQUESTS
+  IMAGES
+  AUDIO_MINUTES
+  VIDEO_MINUTES
+  STORAGE_GB
+  PUBLISHED_POSTS
+}
+
+enum FeatureFlagType {
+  BOOLEAN
+  PERCENTAGE
+  VARIANT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  ACCESS
+  EXECUTE
+}
+
+enum AuditEntityType {
+  USER
+  BRAND
+  SUBSCRIPTION
+  PLAN
+  CONTENT
+  INTEGRATION
+  FEATURE_FLAG
+  USAGE
+  LEAD
+  ANALYTICS
+  ADMIN
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  name           String?
+  role           UserRole        @default(USER)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  ownedBrands    Brand[]         @relation("BrandOwner")
+  memberships    BrandMember[]
+  subscriptions  Subscription[]
+  usageDaily     UsageDaily[]
+  costRecords    CostRecord[]
+  contentAssets  ContentAsset[]
+  calendarItems  ContentCalendarItem[]
+  leads          Lead[]
+  analytics      AnalyticsEvent[]
+  auditLogs      AuditLog[]      @relation("AuditUser")
+  featureFlags   FeatureFlagAssignment[]
+  promptTemplates PromptTemplate[]
+}
+
+model AdminUser {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String?
+  role      AdminRole @default(ADMIN)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  auditLogs AuditLog[] @relation("AuditAdmin")
+}
+
+model Brand {
+  id             String          @id @default(cuid())
+  name           String
+  slug           String          @unique
+  ownerId        String
+  owner          User            @relation("BrandOwner", fields: [ownerId], references: [id])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  memberships    BrandMember[]
+  contentAssets  ContentAsset[]
+  calendarItems  ContentCalendarItem[]
+  integrations   SocialIntegration[]
+  usageDaily     UsageDaily[]
+  costRecords    CostRecord[]
+  leads          Lead[]
+  analytics      AnalyticsEvent[]
+  featureFlags   FeatureFlagAssignment[]
+  promptTemplates PromptTemplate[]
+}
+
+model BrandMember {
+  id        String   @id @default(cuid())
+  brandId   String
+  userId    String
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  brand     Brand    @relation(fields: [brandId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([brandId, userId])
+}
+
+model Plan {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  priceCents  Int
+  currency    String
+  interval    PlanInterval
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id          String             @id @default(cuid())
+  userId      String
+  planId      String
+  status      SubscriptionStatus @default(ACTIVE)
+  startDate   DateTime
+  endDate     DateTime?
+  trialEndsAt DateTime?
+  canceledAt  DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  user        User               @relation(fields: [userId], references: [id])
+  plan        Plan               @relation(fields: [planId], references: [id])
+
+  @@index([userId, status])
+}
+
+model PromptTemplate {
+  id          String                  @id @default(cuid())
+  name        String
+  description String?
+  ownerUserId String?
+  brandId     String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  ownerUser   User?                   @relation(fields: [ownerUserId], references: [id])
+  brand       Brand?                  @relation(fields: [brandId], references: [id])
+  versions    PromptTemplateVersion[]
+}
+
+model PromptTemplateVersion {
+  id              String   @id @default(cuid())
+  promptTemplateId String
+  version         Int
+  content         String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  promptTemplate  PromptTemplate @relation(fields: [promptTemplateId], references: [id])
+
+  @@unique([promptTemplateId, version])
+}
+
+model ContentAsset {
+  id          String       @id @default(cuid())
+  brandId     String
+  userId      String
+  type        ContentType
+  title       String?
+  body        String?
+  assetUrl    String?
+  metadata    Json?
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  brand       Brand        @relation(fields: [brandId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  calendarItems ContentCalendarItem[]
+}
+
+model ContentCalendarItem {
+  id            String        @id @default(cuid())
+  brandId       String
+  userId        String
+  contentAssetId String?
+  scheduledAt   DateTime
+  publishedAt   DateTime?
+  status        ContentStatus @default(SCHEDULED)
+  platform      SocialPlatform
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  brand         Brand         @relation(fields: [brandId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+  contentAsset  ContentAsset? @relation(fields: [contentAssetId], references: [id])
+}
+
+model SocialIntegration {
+  id          String            @id @default(cuid())
+  brandId     String
+  platform    SocialPlatform
+  status      IntegrationStatus @default(CONNECTED)
+  externalId  String?
+  accessToken String?
+  refreshToken String?
+  metadata    Json?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  brand       Brand             @relation(fields: [brandId], references: [id])
+
+  @@unique([brandId, platform])
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  brandId   String
+  userId    String?
+  eventType String
+  occurredAt DateTime @default(now())
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  brand     Brand    @relation(fields: [brandId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  brandId   String
+  userId    String?
+  name      String?
+  email     String?
+  phone     String?
+  source    String?
+  status    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  brand     Brand    @relation(fields: [brandId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model UsageDaily {
+  id        String          @id @default(cuid())
+  date      DateTime
+  brandId   String?
+  userId    String
+  metric    UsageMetricType
+  quantity  Int
+  costCents Int?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  brand     Brand?          @relation(fields: [brandId], references: [id])
+  user      User            @relation(fields: [userId], references: [id])
+
+  @@unique([date, userId, metric, brandId])
+}
+
+model CostRecord {
+  id        String   @id @default(cuid())
+  date      DateTime
+  brandId   String?
+  userId    String?
+  amountCents Int
+  currency  String
+  description String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  brand     Brand?  @relation(fields: [brandId], references: [id])
+  user      User?   @relation(fields: [userId], references: [id])
+}
+
+model FeatureFlag {
+  id          String          @id @default(cuid())
+  key         String          @unique
+  name        String
+  description String?
+  type        FeatureFlagType @default(BOOLEAN)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  assignments FeatureFlagAssignment[]
+}
+
+model FeatureFlagAssignment {
+  id           String   @id @default(cuid())
+  featureFlagId String
+  brandId      String?
+  userId       String?
+  isEnabled    Boolean  @default(true)
+  variant      String?
+  percentage   Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  featureFlag  FeatureFlag @relation(fields: [featureFlagId], references: [id])
+  brand        Brand?      @relation(fields: [brandId], references: [id])
+  user         User?       @relation(fields: [userId], references: [id])
+
+  @@unique([featureFlagId, brandId, userId])
+}
+
+model AuditLog {
+  id           String          @id @default(cuid())
+  action       AuditAction
+  entityType   AuditEntityType
+  entityId     String
+  actorUserId  String?
+  actorAdminId String?
+  ipAddress    String?
+  userAgent    String?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  actorUser    User?           @relation("AuditUser", fields: [actorUserId], references: [id])
+  actorAdmin   AdminUser?      @relation("AuditAdmin", fields: [actorAdminId], references: [id])
+}
